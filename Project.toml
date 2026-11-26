@@ -1,0 +1,6 @@
+name = "NearRecurrences"
+uuid = "a1a9b133-bf89-4bba-a922-0028c8134315"
+version = "0.1.0"
+
+[compat]
+julia = "1.10"
