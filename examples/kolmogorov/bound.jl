@@ -3,7 +3,7 @@
 # one field on the CPU, a sample every 0.1, from a smooth random field after a transient of 300 time
 # units. The distance is that of BatchedKolmogorovFlow.jl, minimised over the shift along x and the
 # translations along y, and the invariant its weighted moduli. A stream of 2000 time units through
-# the search, for the windows 19 to 21 and 95 to 105 below 0.118 with apart 30, counts the pairs it
+# the search, for the windows 19 to 21 and 95 to 105 below 0.118 with apart_t 30, counts the pairs it
 # compares in full. Alongside, for the figure only, the distance and the bound of the pairs of every
 # fifth start of the first 500 time units, at every lag of the windows, without the skip, and the time
 # of each on one core. Writes them to bound.csv, which figure.jl draws in an environment with
@@ -58,7 +58,7 @@ function stream()
                                         spacing   = 0.1,
                                         windows   = [(19.0, 21.0), (95.0, 105.0)],
                                         threshold = 0.118,
-                                        apart     = 30.0,
+                                        apart_t   = 30.0,
                                         invariant = BatchedKolmogorovFlow.moduli)
 
     found   = []

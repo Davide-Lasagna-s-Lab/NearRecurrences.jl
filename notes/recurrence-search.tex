@@ -67,7 +67,7 @@ with $G_{jq} = \sum_{k \equiv q\,(\mathrm{mod}\,4)} w_j\, \bar a_{jk} b_{jk}$, t
 
 The threshold comes from a probability. With $C(d)$ the fraction of pairs of states closer than $d$, the correlation integral, $d_p$ is the distance where $C(d_p) = p$. Measured on $5 \times 10^8$ pairs at lags 100 to 500, minimised over $\sigma$ alone, $d_p = 0.159$, $0.118$ and $0.091$ for $p = 10^{-5}$, $10^{-6}$ and $10^{-7}$. Section~\ref{sec:probability} measures $C$ along the search itself.
 
-Of two minima closer than $W$ in $t$ and in $T$ only the smaller is kept. The stretches of two such minima share most of their trajectory. They are two loops along one passage near an orbit, or one short orbit shadowed over several periods, so they repeat one guess. A difference of the starts grows at the leading Lyapunov exponent $\lambda_1$, so two starts closer than a few Lyapunov times $1/\lambda_1$ lie on nearly the same trajectory. With $\lambda_1 = 0.13$ at $Re = 40$, $W = 30$ is about four Lyapunov times.
+Of two minima of one window closer than \code{apart\_t} in $t$ and \code{apart\_T} in $T$ only the smaller is kept. The stretches of two such minima share most of their trajectory. They are two loops along one passage near an orbit, or one short orbit shadowed over several periods, so they repeat one guess. A difference of the starts grows at the leading Lyapunov exponent $\lambda_1$, so two starts closer than a few Lyapunov times $1/\lambda_1$ lie on nearly the same trajectory. With $\lambda_1 = 0.13$ at $Re = 40$, $\code{apart\_t} = 30$ is about four Lyapunov times. The repeats of one guess thus lie along the start at about the same period, and a narrow \code{apart\_T} keeps the loops of other periods from nearby starts.
 
 \section{The search as a stream}
 \label{sec:stream}
@@ -83,46 +83,48 @@ Three rows are kept per window, those of the starts $i - 2$, $i - 1$ and $i$ (fi
 \begin{figure}[t]
 \centering
 \resizebox{\textwidth}{!}{\input{../assets/diagrams/buffer.tex}}
-\caption{The ring buffer, drawn with $h = 15$ and $W = 2$. The new sample $k$ completes the row of the start $i = k - h$, its distances to the samples at the lags of the window (arrows). The $W + 2$ samples before $i$ hold the stretches of the candidates not yet decided.}
+\caption{The ring buffer, drawn with $h = 15$ and $W = W_t = 2$. The new sample $k$ completes the row of the start $i = k - h$, its distances to the samples at the lags of the window (arrows). The $W_t + 2$ samples before $i$ hold the stretches of the candidates not yet decided.}
 \label{fig:buffer}
 \end{figure}
 
 \begin{figure}[t]
 \centering
 \resizebox{0.9\textwidth}{!}{\input{../assets/diagrams/rows.tex}}
-\caption{The rows of one window, drawn with $W = 2$, the start down the page and the lag across. Three rows are stored, and the older rows keep only their candidates. A candidate within $W + 1$ rows of the middle row is undecided, since a candidate of the middle row may still lie within $W$ of it. One further back is decided.}
+\caption{The rows of one window, drawn with $W = W_t = W_T = 2$, the start down the page and the lag across. Three rows are stored, and the older rows keep only their candidates. A candidate within $W_t + 1$ rows of the middle row is undecided, since a candidate of the middle row may still lie in its box. One further back is decided.}
 \label{fig:rows}
 \end{figure}
 
-Two candidates are close if their starts differ by $W$ samples at most and their lags too, in any windows. A candidate is kept unless a close one comes before it in the order of the keys
+The rule of the closest has two widths in samples, $W_t$ along the start and $W_T$ along the lag, the rounded \code{apart\_t}$/\Delta s$ and \code{apart\_T}$/\Delta s$. Two candidates of one window are close if their starts differ by $W_t$ samples at most and their lags by $W_T$ at most. A candidate is kept unless a close one comes before it in the order of the keys
 \begin{equation}
-(d,\ \text{start},\ \text{lag},\ \text{window}),
+(d,\ \text{start},\ \text{lag}),
 \label{eq:order}
 \end{equation}
-compared one after the other. Of two close candidates, the one of smaller distance is thus kept and the other is dropped, whatever their windows and their shifts. Two kept candidates are never close, since the later one in \eqref{eq:order} would be dropped. The last three keys break ties of distance. A tie arises where two windows overlap and one pair is a candidate of both, which the rule then keeps once, in the window of lower index. The rule depends on the candidates alone, not on the order in which they come. Figure~\ref{fig:search} shows what it removes on the Lorenz system.
+compared one after the other. Of two close candidates, the one of smaller distance is thus kept and the other is dropped, whatever their shifts. Two kept candidates are never close, since the later one in \eqref{eq:order} would be dropped. The last two keys break ties of distance. The rule depends on the candidates alone, not on the order in which they come. Figure~\ref{fig:search} shows the recurrences it keeps on the Lorenz system.
 
-A candidate of the start $s$ depends on the candidates of the starts $s - W$ to $s + W$. A later candidate starts at the middle row or after it, so these have all come once the middle row has reached $s + W + 1$. The sample $k$, whose middle row is $k - h - 1$, thus decides the candidates of the start
+The rule acts within each window, and the candidates of different windows never compete. Windows far apart in lag hold loops of other periods, which are other guesses, and a window of short periods would otherwise lose its recurrences to closer ones of long periods. A pair that lies in two overlapping windows is a candidate of both, and each may return it. By default \code{apart\_T} is infinite, and the package takes $W_T = h$, which spans every window since two lags of one window differ by $h$ at most. A window then returns one recurrence per $W_t$ of start at most. A window wide enough to hold two periods from one start needs a finite $W_T$ to keep both, a few times the width of a minimum along the lag and well below the difference of the two periods.
+
+A candidate of the start $s$ depends on the candidates of its window of the starts $s - W_t$ to $s + W_t$, whatever $W_T$. A later candidate starts at the middle row or after it, so these have all come once the middle row has reached $s + W_t + 1$. The sample $k$, whose middle row is $k - h - 1$, thus decides the candidates of the start
 \begin{equation}
-s = k - h - 2 - W,
+s = k - h - 2 - W_t,
 \label{eq:decided}
 \end{equation}
-and returns those kept. A dropped candidate stays while a later decision needs it, that is while its start lies above $s - W$. The candidates of every window are decided in step with the longest one. A recurrence of a short window becomes final some $h$ samples after its stretch has come, and its stretch stays in the buffer until then.
+and returns those kept, in the order of (start, lag, window). A dropped candidate stays while a later decision needs it, that is while its start lies above $s - W_t$. The candidates of every window are decided in step with the longest one. A recurrence of a short window becomes final some $h$ samples after its stretch has come, and its stretch stays in the buffer until then.
 
-The samples live in a ring buffer shared by all the windows, sample $k$ in slot $k \bmod N$. Its length follows from \eqref{eq:decided}. The stretch of a recurrence decided at the sample $k$ reaches from its start $k - h - 2 - W$ to at most $k$, and it must still be held. The buffer thus holds the samples $k - h - 2 - W$ to $k$, that is
+The samples live in a ring buffer shared by all the windows, sample $k$ in slot $k \bmod N$. Its length follows from \eqref{eq:decided}. The stretch of a recurrence decided at the sample $k$ reaches from its start $k - h - 2 - W_t$ to at most $k$, and it must still be held. The buffer thus holds the samples $k - h - 2 - W_t$ to $k$, that is
 \begin{equation}
-N = h + W + 3 .
+N = h + W_t + 3 .
 \label{eq:buffer}
 \end{equation}
-The next sample overwrites $k + 1 - N = k - h - 2 - W$, the start of the oldest stretch, which is thus held exactly until then. $W$ may exceed the width of a window and its lags. It only delays the decisions by \eqref{eq:decided} and lengthens the buffer by \eqref{eq:buffer}. With $W = 30/\Delta s = 300$ and a state of $34 \times 67$ complex coefficients, 36\,kB, the buffer takes 87\,MB for the bands up to 200 and 0.89\,GB for periods up to 2400.
+The next sample overwrites $k + 1 - N = k - h - 2 - W_t$, the start of the oldest stretch, which is thus held exactly until then. $W_t$ may exceed the width of a window and its lags. It only delays the decisions by \eqref{eq:decided} and lengthens the buffer by \eqref{eq:buffer}, and $W_T$ changes neither. With $W_t = 30/\Delta s = 300$ and a state of $34 \times 67$ complex coefficients, 36\,kB, the buffer takes 87\,MB for the bands up to 200 and 0.89\,GB for periods up to 2400.
 
-The memory stays the same along a run of any length. The candidates held start within the $2W + 2$ rows from $s - W + 1$ to the middle row, and being minima below the threshold they are few. Their vector grows only when they outnumber all those held before. The recurrences decided at one sample all start at $s$ and are not close, so their lags differ by more than $W$, and there are at most $\lceil (h - \ell_{\rm lo} + 1)/(W + 1) \rceil$ of them, with $\ell_{\rm lo}$ the lowest lag. Their vector is given that capacity once.
+The memory stays the same along a run of any length. The candidates held start within the $2W_t + 2$ rows from $s - W_t + 1$ to the middle row, and being minima below the threshold they are few. Their vector grows only when they outnumber all those held before. The recurrences decided at one sample all start at $s$. Those of a window of $n_w$ lags are not close, so their lags differ by more than $W_T$, and there are at most $\lceil n_w/(W_T + 1) \rceil$ of them, one with $W_T = h$. Their vector is given the capacity of the sum over the windows once.
 
-Two windows that touch, $(T_{\rm lo}, T_1)$ and $(T_1, T_{\rm hi})$, share the lag $T_1/\Delta s$. It is the last lag of one and the first of the other, so a minimum there is a candidate of neither. Windows that overlap by two lags or more find it, and the rule of the closest keeps it once.
+Two windows that touch, $(T_{\rm lo}, T_1)$ and $(T_1, T_{\rm hi})$, share the lag $T_1/\Delta s$. It is the last lag of one and the first of the other, so a minimum there is a candidate of neither. Windows that overlap by two lags or more find it, as a candidate of both.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{../examples/lorenz/search.png}
-\caption{The search on the Lorenz system at $\sigma = 10$, $\rho = 28$, $\beta = 8/3$, sampled every $\Delta s = 0.05$ by five steps of the classical Runge--Kutta scheme, for the periods from 0.5 to 4 below $d_p = 0.1$, with the distance $\|\bu(t + T) - \bu(t)\|/\|\bu(t)\|$. (a) The matrix of distances of the first 60 time units, its minima below $d_p$ (open circles), and those kept by the rule of the closest with $W = 0.5$ (squares) and $W = 5$ (stars), half a Lyapunov time and some four. (b) The closest recurrence of the wide rule over $10^4$ time units in the plane $(x, z)$, with the seeds of four segments (section~\ref{sec:seeds}). From \code{examples/lorenz/search.jl}.}
+\caption{The search on the Lorenz system at $\sigma = 10$, $\rho = 28$, $\beta = 8/3$, sampled every $\Delta s = 0.05$ by five steps of the classical Runge--Kutta scheme, for the periods from 0.5 to 4 below $d_p = 0.1$, with the distance $\|\bu(t + T) - \bu(t)\|/\|\bu(t)\|$. The rule of the closest has $\code{apart\_t} = 5$, some four Lyapunov times, and the whole window along the period. (a) The matrix of distances of the first 60 time units and the recurrences (stars). (b) The closest recurrence over $10^4$ time units in the plane $(x, z)$, with the seeds of four segments (section~\ref{sec:seeds}). From \code{examples/lorenz/search.jl}.}
 \label{fig:search}
 \end{figure}
 
@@ -140,7 +142,7 @@ returned with the rotations $r \in \{0, 1\}$ of $b$ that reach it. A recurrence 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{../examples/lorenz/symmetry.png}
-\caption{The search on the Lorenz system up to the rotation $R$, with $W = 5$, over $10^4$ time units, otherwise as figure~\ref{fig:search}. (a) The recurrences, by the rotation that closes them. (b) The closest of those that close after the rotation, in the plane $(x, z)$, where $R$ is the mirror $x \to -x$ (dashed). Its end, rotated, lies near its start. From \code{examples/lorenz/symmetry.jl}.}
+\caption{The search on the Lorenz system up to the rotation $R$, with $\code{apart\_t} = 5$, over $10^4$ time units, otherwise as figure~\ref{fig:search}. (a) The recurrences, by the rotation that closes them. (b) The closest of those that close after the rotation, in the plane $(x, z)$, where $R$ is the mirror $x \to -x$ (dashed). Its end, rotated, lies near its start. From \code{examples/lorenz/symmetry.jl}.}
 \label{fig:symmetry}
 \end{figure}
 
@@ -245,7 +247,8 @@ R = NearRecurrences.Recurrences(x, BatchedKolmogorovFlow.Distance(n, kf);  # (d,
                                 spacing   = 0.1,
                                 windows   = [(19, 21), (173, 245), (1414, 2400)],
                                 threshold = 0.118,
-                                apart     = 30.0,
+                                apart_t   = 30.0,
+                                apart_T   = 2.0,
                                 invariant = BatchedKolmogorovFlow.moduli)
 
 for k in 1:10^7
@@ -258,13 +261,13 @@ end
 rest = NearRecurrences.finish!(R)
 NearRecurrences.probability(R, 0.091)
 \end{Verbatim}
-\code{Distance(n, kf)} returns $(d, \sigma, s_y)$ by \eqref{eq:poly}, minimised over the shift and the four translations, and \code{moduli} the invariant of section~\ref{sec:bound}. A recurrence \code{r} is the named tuple \code{(t, T, d, shifts, window, start, lag)}, with the shifts $(\sigma, s_y)$ after the distance. \code{seeds} returns the $m + 1$ states at the offsets \eqref{eq:offsets}, copies of the samples, and the offsets. The rule of the closest keeps one of the minima within 30 time units, about four Lyapunov times, since closer ones repeat one guess.
+\code{Distance(n, kf)} returns $(d, \sigma, s_y)$ by \eqref{eq:poly}, minimised over the shift and the four translations, and \code{moduli} the invariant of section~\ref{sec:bound}. A recurrence \code{r} is the named tuple \code{(t, T, d, shifts, window, start, lag)}, with the shifts $(\sigma, s_y)$ after the distance. \code{seeds} returns the $m + 1$ states at the offsets \eqref{eq:offsets}, copies of the samples, and the offsets. The rule of the closest keeps one of the minima of a window within 30 time units of start, about four Lyapunov times, since closer ones repeat one guess, and within 2 of period, so that the wide windows keep two loops of different periods from nearby starts.
 
 Five choices shape the interface. First, one buffer over the longest lag serves all the windows. The trajectory is integrated once whatever the number of windows, and every stretch is held. The price is $N$ states in memory by \eqref{eq:buffer}. A stream per window would hold only the width of its window, but each would integrate the trajectory again and none would hold a stretch.
 
 Second, the loop belongs to the user. \code{push!} returns the recurrences that the sample makes final, and their stretches are held until the next \code{push!}, by \eqref{eq:buffer}. The seeds are then copied in place, from the buffer, and only those asked for. A callback would do the same with one more function to pass, and an iterator over the recurrences would have to copy every stretch, up to 24\,000 states at $T = 2400$. The vector returned is reused by the next \code{push!}, so a run allocates nothing after the start but the growth of the candidates to a new largest number.
 
-Third, the rule of the closest acts across the windows. The long windows of the flow touch, and two minima on either side of a common edge repeat one guess as much as two minima within a window do. One list of candidates for all the windows, decided in step with the longest one, does this at no cost in memory, since the buffer \eqref{eq:buffer} is set by the longest window anyway.
+Third, the rule of the closest acts within each window. Windows far apart in period hold different loops, and a window of short periods would otherwise lose its recurrences to closer ones of long periods. One list of candidates for all the windows, decided in step with the longest one, costs nothing in memory, since the buffer \eqref{eq:buffer} is set by the longest window anyway.
 
 Fourth, the distance returns its shifts with it, and the rows hold distances only. A recurrence takes its shifts from one more call of the distance when it is kept, which is rare.
 
@@ -285,7 +288,7 @@ Two rules describe the counts (figure~\ref{fig:numbers}b). The count in a band g
 
 \begin{table}[t]
 \centering
-\caption{The cost of a time unit of simulation of Kolmogorov flow on one core, in seconds, for the integration and for the distances of the windows, the pairs compared per sample and the ring buffer of \eqref{eq:buffer}, with $W = 300$ and the moduli held with the samples when the bound is used. Medians over the runs.}
+\caption{The cost of a time unit of simulation of Kolmogorov flow on one core, in seconds, for the integration and for the distances of the windows, the pairs compared per sample and the ring buffer of \eqref{eq:buffer}, with $W_t = 300$ and the moduli held with the samples when the bound is used. Medians over the runs.}
 \label{tab:cost}
 \small
 \begin{tabular}{l l l r r r r}

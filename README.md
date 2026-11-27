@@ -75,68 +75,48 @@ below a threshold. A pass near an orbit makes a valley of $d$ in that plane, and
 is the best guess the pass offers. The threshold comes from a probability, the fraction of the pairs
 closer than $d$, which the search measures (see [below](#the-probability-of-a-distance)).
 
-Of two minima whose starts and periods both differ by `apart` at most, only the closer is kept. Their
-stretches share most of their trajectory. They are two loops along one pass near an orbit, or one
-short orbit followed over several periods, so they repeat one guess. Two starts closer than a few
-Lyapunov times lie on nearly the same trajectory, since a difference of the starts grows at the
-leading exponent. A few Lyapunov times is thus the natural `apart`.
-
 ## The search as a stream
 
-The periods are searched in windows. A window holds the lags from $\ell_{lo}$ to $\ell_{hi}$ samples,
-and $h$ is the longest lag of all the windows. The row of the start sample $i$ holds its distances
-to the samples at the lags of the window. Every row of the start $i$ is complete once the sample
-$i + h$ has come, so the new sample $k$ completes the row of the start $k - h$ in every window, one
-distance per lag. All the windows hold the rows of the same starts.
+The search fills a recurrence diagram one column at a time. A cell of the diagram is a pair of
+samples, a start and an end some lags later, and it holds their distance. A window is a band of
+lags, from $\ell_{lo}$ to $\ell_{hi}$.
 
-<p align="center"><img src="assets/buffer.svg" alt="The ring buffer" width="720"></p>
+<p align="center"><img src="assets/search.svg" alt="The search as a stream" width="760"></p>
 
-*The ring buffer, drawn with $h = 15$ and $W = 2$. The new sample $k$ completes the row of the start
-$i = k - h$, its distances to the samples at the lags of the window. The $W + 2$ samples before the
-start hold the stretches of the candidates not yet decided.*
+*The recurrence diagram of one window, the start across and the lag up, and under it the samples of
+the stream. The new sample $k$ completes the column of the start $k - h$. The candidate at the
+centre of the red box is decided now. It is kept, the repeat inside its box is dropped, and the
+candidate of another period, outside the box, is kept too.*
 
-Three rows are kept per window, those of the starts $i - 2$, $i - 1$ and $i$. An entry of the middle
-row is a candidate if it lies below the threshold of its window and below its eight neighbours. The
-first and the last lag of a window lack the neighbours on one side, and they are never candidates.
+With $h$ the longest lag of all the windows, the new sample $k$ is the last end of the start
+$k - h$. It completes the column of that start in every window, at the cost of one distance per
+lag. The trajectory is never stored.
 
-With $W$ the number of samples of `apart`, two candidates are close if their starts differ by $W$ at
-most and their lags too, in any windows. A candidate is kept unless a close one comes before it in
-the order of (distance, start, lag, window). Of two close candidates the one of smaller distance is
-thus kept and the other is dropped, whatever their windows and their shifts, and two kept ones are
-never close. The rule depends on the candidates alone, not on the order in which they come.
+A candidate is a cell below the threshold of its window and below its eight neighbours. The first
+and the last lag of a window lack the neighbours on one side, and they are never candidates.
 
-<p align="center"><img src="assets/rows.svg" alt="The rows of one window" width="720"></p>
+A trajectory that comes back near itself follows its own start for a while. One recurrence thus
+leaves repeats, further minima along the start at about the same period. So of two candidates of
+one window within `apart_t` of each other in start and `apart_T` in period, the closer is kept.
+`apart_t` is about the time over which two close trajectories stay close, a few Lyapunov times.
+`apart_T` is the whole window by default, and a finite one keeps two periods from one start in a
+wide window. The candidates of different windows never compete.
 
-*The rows of one window, drawn with $W = 2$, the start down the page and the lag across. Three rows
-are stored, and the older ones keep only their candidates. A candidate within $W + 1$ rows of the
-middle row is undecided, since a candidate of the middle row may still be close to it.*
-
-A candidate of the start $s$ depends on the candidates of the starts $s - W$ to $s + W$. These have
-all come once the middle row has reached $s + W + 1$, since a later candidate starts at the middle
-row or after it. The sample $k$ thus decides the candidates of the start $k - h - 2 - W$, and
-`push!` returns those kept. The candidates of every window are decided in step with the longest
-window. So a recurrence of a short window becomes final some $h$ samples after its stretch has come.
-
-The length of the buffer follows from the stretches. A recurrence decided at the sample $k$ starts at
-$k - h - 2 - W$, and its stretch reaches at most $k$. The buffer thus holds
+A candidate is decided once the columns have passed its box, when the new column lies $W_t + 2$
+past its start, with $W_t$ the samples of `apart_t`. `push!` returns it then, and its stretch, the
+samples from its start to its end, must still be held for the seeds. The buffer thus holds the last
 
 $$
-N = h + W + 3
+N = h + W_t + 3
 $$
 
-samples. The next sample overwrites the start of the oldest stretch, which is held exactly until
-then. `apart` may exceed the width of a window. It only delays the decisions and lengthens the
-buffer.
-
-The memory does not grow along a run. The candidates held start within $2W + 2$ rows, and being
-minima below the threshold they are few. Their vector grows only when they outnumber all those held
-before. The recurrences decided by one sample are not close to one another, so their lags differ by
-more than $W$, and their vector is given the capacity of that bound once.
+samples, and the memory does not grow along a run. The candidates of every window are decided in
+step with the longest one, so a recurrence of a short window becomes final some $h$ samples after
+its stretch has come.
 
 Two windows that touch, $(T_{lo}, T_1)$ and $(T_1, T_{hi})$, share the lag of $T_1$. It is the last
 lag of one and the first of the other, so a minimum there is a candidate of neither. Windows that
-overlap by two lags or more find it, and the rule of the closest keeps it once, in the window of
-lower index.
+overlap by two lags or more find it, and each may return it.
 
 ## The interface
 
@@ -147,7 +127,8 @@ R = NearRecurrences.Recurrences(x, distance;
                                 spacing   = 0.1,                    # time between two samples
                                 windows   = [(19, 21), (190, 210)], # periods searched, (lowest, highest)
                                 threshold = 0.118,                  # one number, or one per window
-                                apart     = 30.0,                   # the closer of two minima this close
+                                apart_t   = 20.0,                   # the closer of two minima this close in start
+                                apart_T   = Inf,                    # optional, and this close in period
                                 invariant = nothing)                # optional, see below
 
 for k in 1:steps
@@ -165,9 +146,14 @@ NearRecurrences.probability(R, 0.05)     # the fraction of the pairs compared cl
 
 `x` is a sample, an array or a type with `copy` and `copyto!`. The buffer holds copies of it, and
 the k-th call of `push!` is sample k, at the time `(k - 1)*spacing`. The lags of a window are
-`round(Int, lo/spacing)` to `round(Int, hi/spacing)`, both included, and `apart` is rounded to
-samples the same way. Rounding, not truncation, matters, since `0.3/0.1` falls just below 3. After
-the constructor every index is a count of samples.
+`round(Int, lo/spacing)` to `round(Int, hi/spacing)`, both included, and `apart_t` and `apart_T`
+are rounded to samples the same way. Rounding, not truncation, matters, since `0.3/0.1` falls just
+below 3. After the constructor every index is a count of samples.
+
+`apart_t` is the width of the rule of the closest along the start, a few Lyapunov times, and it sets
+the delay of the decisions and the length of the buffer. `apart_T` is the width along the period,
+the whole window unless a wide window must keep two periods from one start. The rule acts within
+each window, as [the search as a stream](#the-search-as-a-stream) draws.
 
 `distance(a, b)` returns the distance of the start `a` and the end `b`, minimised over the
 symmetries of the system, as many as it has, continuous and discrete. It returns a number, or a
@@ -192,8 +178,9 @@ The choices have their reasons.
 - **The loop is yours.** `push!` returns the recurrences made final while their stretches are
   held, so the seeds are copied from the buffer in place, and only those asked for. An iterator
   over the recurrences would have to copy every stretch.
-- **The rule of the closest acts across the windows.** Windows of long periods touch, and two minima
-  on either side of a common edge repeat one guess as much as two minima within a window do.
+- **The rule of the closest acts within each window.** Windows far apart in period hold different
+  loops, and a window of short periods would otherwise lose its recurrences to closer ones of long
+  periods. A pair in two overlapping windows may be returned by both.
 - **The rows hold distances only.** A recurrence takes its shifts from one more call of `distance`
   when it is kept, which is rare.
 - **The bound is a keyword.** Any invariant of the symmetries serves, and a test can check it on
@@ -246,12 +233,12 @@ The examples run on the Lorenz system at $\sigma = 10$, $\rho = 28$, $\beta = 8/
 by five steps of the classical Runge–Kutta scheme, for the periods from 0.5 to 4 below the distance
 0.1, along $10^4$ time units. The leading Lyapunov exponent is near 0.9.
 [`examples/lorenz/search.jl`](examples/lorenz/search.jl) searches with the distance
-$\lVert u(t + T) - u(t)\rVert/\lVert u(t)\rVert$, three times on one stream, with `apart` of 0, 0.5
-and 5 time units, none, half a Lyapunov time and some four.
+$\lVert u(t + T) - u(t)\rVert/\lVert u(t)\rVert$ and `apart_t` of 5 time units, some four Lyapunov
+times.
 
 ```julia
 R = NearRecurrences.Recurrences(x, distance; spacing = 0.05, windows = [(0.5, 4.0)],
-                                threshold = 0.1, apart = 5.0)
+                                threshold = 0.1, apart_t = 5.0)
 for k in 1:200_000
     advance!(x)                                   # five steps of 0.01
     for r in push!(R, x)
@@ -260,16 +247,13 @@ for k in 1:200_000
 end
 ```
 
-The stream has 40 494 minima below 0.1 in $10^4$ time units. The rule keeps 22 776 of them with
-`apart` 0.5 and 982 with `apart` 5. A narrow rule thus keeps the neighbours along one valley, which
-repeat one guess, and a rule of a few Lyapunov times keeps one per pass.
+The stream finds 982 recurrences in $10^4$ time units.
 
 ![The search on the Lorenz system](examples/lorenz/search.png)
 
-*(a) The matrix of $\log_{10} d$ over the start and the period, the first 60 time units, with its
-minima below 0.1 and those that the rule of the closest keeps with `apart` 0.5 and 5. The valleys
-run along the periods of the orbits that the trajectory follows for a while. (b) The closest
-recurrence with `apart` 5, in the plane $(x, z)$, with the seeds of four segments.*
+*(a) The matrix of $\log_{10} d$ over the start and the period, the first 60 time units, with the
+recurrences. The valleys run along the periods of the orbits that the trajectory follows for a
+while. (b) The closest recurrence, in the plane $(x, z)$, with the seeds of four segments.*
 
 ## Symmetries and shifts
 
@@ -385,7 +369,7 @@ domain of length 22, the system of the tests, with 15 Fourier modes, the classic
 scheme on the linear part taken exactly, steps of 0.025 and a sample every 0.25. The distance
 minimises over the shift along $x$ and the reflection $u(x) \to -u(-x)$, one continuous symmetry and
 one discrete, and returns `(d, σ, r)`. The invariant is the weighted moduli of the modes. Over
-$5 \times 10^4$ time units, for the periods from 8 to 40 below 0.15, with `apart` 90, some four
+$5 \times 10^4$ time units, for the periods from 8 to 40 below 0.15, with `apart_t` 90, some four
 Lyapunov times at the leading exponent near 0.04, the stream finds 266 recurrences, 122 of them
 closing after the reflection. The bound skips 96 per cent of the pairs. In the tests a pair costs
 2.9 μs in full and 0.3 μs with the bound.
@@ -427,9 +411,10 @@ G(x, 500.0)                                                  # the transient
 
 R = NearRecurrences.Recurrences(x, BatchedKolmogorovFlow.Distance(n, kf);  # (d, σ, sy)
                                 spacing   = 0.1,                           # ten steps
-                                windows   = [(19, 21), (173, 245), (1414, 2400)],
+                                windows   = [(0.95T, 1.05T) for T in (20, 30, 50, 70, 100, 150,
+                                                                 200, 300, 500, 1000, 2000)],
                                 threshold = 0.118,
-                                apart     = 30.0,
+                                apart_t   = 20.0,
                                 invariant = BatchedKolmogorovFlow.moduli)
 
 for k in 1:10^7
@@ -441,12 +426,13 @@ for k in 1:10^7
 end
 ```
 
-A sample is ten steps of 0.01, a whole number, as [the seeds](#the-seeds) require. `apart` is 30 time
-units, about four Lyapunov times at the leading exponent 0.13, since two minima closer than that
-repeat one guess. Each recurrence carries its shift and its translation, `r.shifts == (σ, sy)`.
+A sample is ten steps of 0.01, a whole number, as [the seeds](#the-seeds) require. The windows are
+bands of periods within five per cent of eleven values. `apart_t` is 20 time units, between two and
+three Lyapunov times at the leading exponent 0.13. Each recurrence carries its shift and its
+translation, `r.shifts == (σ, sy)`.
 
 [`examples/kolmogorov/bound.jl`](examples/kolmogorov/bound.jl) runs this set-up over 2000 time units,
-for the windows 19 to 21 and 95 to 105 below 0.118 with `apart` 30, and
+for the windows 19 to 21 and 95 to 105 below 0.118 with `apart_t` 30, and
 [`examples/kolmogorov/figure.jl`](examples/kolmogorov/figure.jl) draws its bound. They run apart,
 since CairoMakie brings a second FFT package whose plans make those of FFTW ambiguous in the
 propagator.
@@ -497,35 +483,49 @@ The tests run on systems written in the test with fixed steps of a Runge–Kutta
 system with and without its rotation, and the Kuramoto–Sivashinsky equation on a domain of length 22
 with its shift and its reflection, one continuous symmetry and one discrete. The reference is written
 plainly from the whole trajectory, its matrices of distances by blocks of starts, its candidates by
-the eight neighbours, and its rule of the closest over all the candidates sorted by start. Each test
-guards against one way the search could go wrong.
+the eight neighbours, and its rule of the closest over the candidates of each window sorted by
+start. Each test guards against one way the search could go wrong.
 
 - **The ring buffer.** Ten samples through four slots, the samples held after the wrap, a
   `BoundsError` for a sample that has left or not come, and a copy on `push!`. It guards against
   reading an old slot for the sample asked.
 - **The windows in samples.** Periods that do not divide exactly, `0.3/0.1` and `0.7/0.1`, give
-  the lags 3 and 7, both included, and `apart` rounds the same way. It guards against a window or a
-  rule one sample short.
+  the lags 3 and 7, both included, and `apart_t` and `apart_T` round the same way. `apart_T` stops
+  at the longest lag, so that its default spans every window, and `apart_t` alone sets the buffer.
+  It guards against a window or a rule one sample short.
 - **Lorenz, two windows.** $2 \times 10^4$ samples against the reference, with a threshold per
-  window and `apart` wider than the first window, equal in every field. Every recurrence starts at
+  window and `apart_t` wider than the first window, equal in every field. Every recurrence starts at
   the first sample held, and the next `push!` takes its stretch away, so the buffer is neither short
   nor long. The seeds of 1, 3, 7 and all the segments are the samples bit for bit, each segment
-  repeats the steps of the simulation, and the first and the last state give the distance. Some
-  candidates of one window are dropped for close ones of the other. The histograms and
-  `probability` agree with the reference at every edge.
+  repeats the steps of the simulation, and the first and the last state give the distance. A
+  recurrence of one window is kept beside a closer one of the other a few starts away. Every call
+  returns its recurrences in the order of (start, lag, window). The histograms and `probability`
+  agree with the reference at every edge.
+- **The two widths.** $2 \times 10^4$ samples of Lorenz through two overlapping windows, with six
+  pairs of widths: long along the start and narrow along the period, the other way round, none
+  along the period, none at all, the default, and one as wide as the window. Each search equals the
+  reference, and every recurrence starts at the first sample held with seeds that are its stretch
+  bit for bit. The default equals the width of the window, and with no widths every candidate is
+  kept, a pair of both windows in both. It guards each width on its own.
+- **Windows apart in lag, a designed stream.** The samples are 1, 2, 3, … and the distance is 1 but
+  at five pairs. At one start the first window has a minimum of 0.1 and the second one of 0.5. Both
+  come out of one call, the second window first since its lag is shorter. Within each window a
+  farther minimum falls to a closer one within `apart_t`. It guards against windows that compete.
 - **Kuramoto–Sivashinsky, a shift and a reflection.** 4000 samples, $10^4$ in the long run, the distance
   minimised over a continuous and a discrete symmetry and returned as `(d, σ, r)`, with the invariant
   and without it. The same recurrences, shifts and histograms as the reference, both reflections
   among them, and the shifts close each stretch to its distance. It guards the two shifts and the
   bound, and it prints the cost per pair.
 - **A long stream.** $2 \times 10^4$ samples of Lorenz with its rotation, $5 \times 10^5$ in the
-  long run, some 18 and 450 wraps of the buffer, five windows of 11 to 201 lags with a threshold each, two of them touching and two
-  overlapping, and `apart` wider than all but the longest. Equal to the reference built by blocks.
-  `push!` allocates only when the candidates outnumber all those before, a few times in all. The
-  common lag of the touching windows holds no candidate of either, while one window over both has
-  candidates there. A pair in two overlapping windows is one recurrence. The rule drops minima for
-  close ones of the other rotation. A replay of the stored samples gives the same recurrences in the
-  same order, the same seeds bit for bit and the same state of the search. It guards a run of days.
+  long run, some 18 and 450 wraps of the buffer, five windows of 11 to 201 lags with a threshold
+  each, two of them touching and two overlapping, `apart_t` wider than all but the longest and
+  `apart_T` narrower than the last two. Equal to the reference built by blocks. `push!` allocates
+  only when the candidates outnumber all those before, a few times in all. The common lag of the
+  touching windows holds no candidate of either, while one window over both has candidates there.
+  Each of the overlapping windows decides its candidates as a search on it alone does. The rule
+  drops minima for close ones of the other rotation. A replay of the stored samples gives the same
+  recurrences in the same order, the same seeds bit for bit and the same state of the search. It
+  guards a run of days.
 - **The seeds and the steps of the integrator.** Lorenz advanced over spans by steps of 0.005 and a
   last step that ends the span, with samples of 10 and of 10.5 steps, with the rotation and without
   it. It checks the three ways of the table of [the seeds](#the-seeds), and it guards against the
@@ -542,8 +542,8 @@ guards against one way the search could go wrong.
 | [`notes/recurrence-search.tex`](notes/recurrence-search.tex) | the mathematics, with `fig_counts.jl` and its tables in `data/` |
 
 Every file opens with what it holds and the mathematics it follows. Read the top of
-`recurrences.jl` first, the distance, the rows, the candidates, the rule of the closest, the length of
-the buffer, the memory, the bound and the probability. The diagrams are drawn by
+`recurrences.jl` first, the distance, the rows, the candidates, the rule of the closest and its two
+widths, the length of the buffer, the memory, the bound and the probability. The diagrams are drawn by
 `bash assets/make_diagrams.sh` from their TikZ sources in `assets/diagrams/`, and the logo by
 `julia --project=. assets/make_logo.jl`. The note is built in `notes/` by
 `tectonic recurrence-search.tex`.

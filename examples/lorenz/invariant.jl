@@ -2,7 +2,7 @@
 # v = (√(x² + y²), z) does not change under the rotation, has the norm of the state, and does not
 # stretch distances, so that β = ‖v(b) - v(a)‖/‖v(a)‖ is at most the distance d minimised over the
 # rotation. A pair whose β is not below the threshold is not compared in full. Periods from 0.5 to 4
-# below 0.1, apart 5, along 10⁴ time units, with the invariant and without it, the calls of the
+# below 0.1, apart_t 5, along 10⁴ time units, with the invariant and without it, the calls of the
 # distance counted. The figure draws β against d for the pairs of every tenth start of the first
 # 1000 time units, all below the diagonal, with the threshold and the pairs it skips.
 #
@@ -17,7 +17,7 @@ function stream(x)
     settings = (spacing   = 0.05,
                 windows   = [(0.5, 4.0)],
                 threshold = 0.1,
-                apart     = 5.0)
+                apart_t   = 5.0)
     full     = NearRecurrences.Recurrences(x, (a, b) -> (calls[1] += 1; rotated(a, b)); settings...)
     bound    = NearRecurrences.Recurrences(x, (a, b) -> (calls[2] += 1; rotated(a, b)); settings...,
                                            invariant = invariant)

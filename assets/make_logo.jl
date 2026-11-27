@@ -42,7 +42,7 @@ function recurrence()
                                     spacing   = 0.05,
                                     windows   = [(1.5, 1.6)],
                                     threshold = 0.25,
-                                    apart     = 5.0)
+                                    apart_t   = 5.0)
     best = (gap = 0.0, start = Float64[], lag = 0)
     for _ in 1:4000
         advance!(x)

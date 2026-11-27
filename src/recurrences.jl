@@ -23,45 +23,59 @@
 # lag of a window lack the neighbours on one side and are never candidates, nor are the first and the
 # last row of the stream.
 #
-# The rule of the closest. With W = round(apart/Δs), two candidates are close if their starts differ
-# by W samples at most and their lags too, in any windows. Two close minima share most of their
-# stretch of trajectory, so they are repetitions of one guess. A candidate is kept unless a close one
-# comes before it in the order of (distance, start, lag, window), so that of two close candidates the
-# one of smaller distance is kept and the other is dropped, whatever their shifts. The kept ones are
-# never close to one another. The last three keys break ties of distance. A tie arises where windows
-# overlap and one pair is a candidate of both, which the rule keeps once, in the window of lower
-# index. The rule depends on the candidates alone, not on the order in which they come.
+# The rule of the closest. Two widths, in samples, W_t = round(apart_t/Δs) along the start and
+# W_T = round(apart_T/Δs) along the lag, at most h. Two candidates of one window are close if their
+# starts differ by W_t samples at most and their lags by W_T at most. A candidate is kept unless a
+# close one comes before it in the order of (distance, start, lag), so that of two close candidates
+# the one of smaller distance is kept and the other is dropped, whatever their shifts. The kept ones
+# are never close to one another. The last two keys break ties of distance. The rule depends on the
+# candidates alone, not on the order in which they come.
 #
-# When a candidate is decided. A candidate of the start s depends on the candidates of the starts
-# s - W to s + W. These have all come once the middle row has reached s + W + 1, since later
-# candidates start at the middle row or after it. The sample k, whose middle row is k - h - 1, thus
-# decides the candidates of the start s = k - h - 2 - W. push! returns those kept, and finish!
-# decides the candidates still undecided when the stream stops. A dropped candidate stays among the
-# candidates while a later decision needs it, that is while its start is above s - W.
+# Why the rule acts within a window. A trajectory that passes near an orbit follows it for a while,
+# and every start of that while closes nearly the same loop. The repeats of one guess thus lie along
+# the start at about the same period, over the time two close trajectories stay close, a few
+# Lyapunov times, which W_t spans. Windows far apart in lag hold loops of other periods, other
+# guesses, and the candidates of different windows never compete. A window of short periods would
+# otherwise lose its recurrences to closer ones of long periods. A pair that lies in two overlapping
+# windows is a candidate of both, and each may return it.
 #
-# The length of the buffer. The recurrences decided at the sample k start at k - h - 2 - W, and their
-# stretches, the samples from the start to the start plus the lag, at most k, must be held until the
-# next push. The buffer thus holds the samples k - h - 2 - W to k, that is
+# The width along the lag. By default apart_T = Inf, and W_T = h spans every window, since two lags of
+# one window differ by h at most: a window returns one recurrence per W_t of start at most. A
+# window wide enough to hold two periods from one start, two loops of different periods, needs a
+# finite W_T to keep both, a few times the width of a minimum along the lag and well below the
+# difference of the two.
 #
-#     N = h + W + 3
+# When a candidate is decided. A candidate of the start s depends on the candidates of its window of
+# the starts s - W_t to s + W_t, whatever W_T. These have all come once the middle row has reached
+# s + W_t + 1, since later candidates start at the middle row or after it. The sample k, whose middle
+# row is k - h - 1, thus decides the candidates of the start s = k - h - 2 - W_t, in every window.
+# push! returns those kept, and finish! decides the candidates still undecided when the stream stops,
+# both in the order of (start, lag, window). A dropped candidate stays among the candidates while a
+# later decision needs it, that is while its start is above s - W_t.
 #
-# samples. The next push writes sample k + 1 over sample k + 1 - N = k - h - 2 - W, the start of the
-# oldest stretch. The test "Lorenz, two windows" checks that the recurrences start at the first
-# sample held, and that the next push takes their stretch away. W may exceed the width of a window
-# and its lags. It only delays the decisions and lengthens the buffer.
+# The length of the buffer. The recurrences decided at the sample k start at k - h - 2 - W_t, and
+# their stretches, the samples from the start to the start plus the lag, at most k, must be held
+# until the next push. The buffer thus holds the samples k - h - 2 - W_t to k, that is
 #
-# The memory. The candidates held start within the 2W + 2 rows from s - W + 1 to the middle row.
+#     N = h + W_t + 3
+#
+# samples. The next push writes sample k + 1 over sample k + 1 - N = k - h - 2 - W_t, the start of
+# the oldest stretch. The test "Lorenz, two windows" checks that the recurrences start at the first
+# sample held, and that the next push takes their stretch away. W_t may exceed the width of a window
+# and its lags. It only delays the decisions and lengthens the buffer. W_T changes neither.
+#
+# The memory. The candidates held start within the 2 W_t + 2 rows from s - W_t + 1 to the middle row.
 # Being minima below the threshold, they are few, and their vector grows only when they outnumber
-# all those held before. The recurrences kept at one start are not close, so their lags differ by more
-# than W, and at most cld(h - ℓ_lo + 1, W + 1) of them are decided at one sample, with ℓ_lo the lowest
-# lag. Their vector is given that capacity once. push! thus allocates nothing after the start, save
-# what the invariant of the user returns and the growth of the candidates to a new largest number
-# (test "a long stream").
+# all those held before. The recurrences kept at one start in a window of n_w lags are not close, so
+# their lags differ by more than W_T, and at most cld(n_w, W_T + 1) of them are decided at one sample,
+# one with W_T = h. Their vector is given the capacity of the sum over the windows once. push! thus
+# allocates nothing after the start, save what the invariant of the user returns and the growth of
+# the candidates to a new largest number (test "a long stream").
 #
 # Windows that touch. Two windows (lo, T₁) and (T₁, hi) share the lag round(T₁/Δs), the last of one
 # and the first of the other. A lag at the edge of a window lacks the neighbours on one side, so a
 # minimum at the common lag is a candidate of neither window. Windows that overlap by two lags or
-# more find it, and the rule of the closest keeps it once (test "a long stream").
+# more find it, as a candidate of both (test "a long stream").
 #
 # The invariant bound. An invariant v(u) is a real array that the symmetries leave unchanged,
 # v(S u) = v(u), and that does not stretch distances, ‖v(a) - v(b)‖ ≤ ‖a - b‖, with ‖v(a)‖ = ‖a‖. For
@@ -92,15 +106,16 @@
 # between two edges lies 2.3 per cent at most above the one below, whose fraction it takes.
 
 """
-    Recurrences(x, distance; spacing, windows, threshold, apart, invariant=nothing)
+    Recurrences(x, distance; spacing, windows, threshold, apart_t, apart_T=Inf, invariant=nothing)
 
 The search of near recurrences along a stream of samples, one every `spacing`. `push!(R, x)` takes
 the next sample and returns the recurrences that it makes final, and `finish!(R)` those still
 undecided when the stream stops. A recurrence is a pair of samples, a start and an end a period `T`
 later in one of the windows, whose distance is a local minimum over the start and the period, lies
-below the threshold of its window, and is the smallest of the minima within `apart` of it, across
-the windows. The buffer holds the last samples, enough that the stretch of a recurrence, the
-samples from its start to its end, is held until the next `push!`, for `seeds`.
+below the threshold of its window, and is the smallest of the minima of its window whose starts lie
+within `apart_t` of it and whose periods lie within `apart_T`. The buffer holds the last samples,
+enough that the stretch of a recurrence, the samples from its start to its end, is held until the
+next `push!`, for `seeds`.
 
 # Arguments
 - `x`: a template of a sample, with `copy` and `copyto!`, as an array. The buffer holds copies of
@@ -114,10 +129,14 @@ samples from its start to its end, is held until the next `push!`, for `seeds`.
   `round(Int, lo/spacing)` to `round(Int, hi/spacing)` samples.
 - `threshold`: the largest distance of a recurrence, excluded, one number for all the windows or one
   per window.
-- `apart::Real`: two minima whose starts differ by `apart` at most and whose periods too, in time
-  units, share most of their stretch and repeat one guess. Of two such minima, in any windows and
-  with any shifts, the one of smaller distance is kept. Rounded to whole samples. It may exceed the
-  width of a window.
+- `apart_t::Real`: the width of the rule of the closest along the start, in time units. Of two minima
+  of one window whose starts differ by `apart_t` at most and whose periods by `apart_T` at most, with
+  any shifts, the one of smaller distance is kept, since they repeat one guess. About the time over
+  which two close trajectories stay close, a few Lyapunov times. Rounded to whole samples. It may
+  exceed the width of a window, and it sets the delay of the decisions and the length of the buffer.
+- `apart_T::Real=Inf`: the width along the period, in time units, rounded to whole samples. `Inf`
+  spans the whole window. A wide window needs a finite width to keep two periods from one start, a
+  few times the width of a minimum along the period and well below the difference of the two.
 - `invariant=nothing`: a function of a sample that returns a real array `v`, unchanged by the
   symmetries of `distance`, with `norm(v(a)) == norm(a)` and `norm(v(a) - v(b)) <= norm(a - b)` in the
   norm of `distance`. Then `norm(v(a) - v(b))/norm(v(a)) <= distance(a, b)`, and a pair whose bound
@@ -127,8 +146,9 @@ A recurrence is the named tuple `(t, T, d, shifts, window, start, lag)`, with th
 the period, the distance, the shifts that `distance` returns after it (an empty tuple if none), the
 index of the window, and the start and the lag in samples. The k-th sample pushed is sample `k`, at
 the time `t = (k - 1)*spacing`, and the period is `T = lag*spacing`. A recurrence is decided once
-the longest window has moved `apart` past its start, so the recurrences of every window come in step
-with the longest one.
+the longest window has moved `apart_t` past its start, so the recurrences of every window come in
+step with the longest one, in the order of (start, lag, window). Windows never compete: a pair that
+lies in two overlapping windows may be returned by both.
 
 Each window counts the pairs it compares, `R.pairs[w]`, and the distances below its threshold by
 bins of `log10 d`, `R.counts[w][j]` for `R.edges[w][j] <= log10(d) < R.edges[w][j + 1]`, with the
@@ -145,7 +165,8 @@ struct Recurrences{X, V, D, I, C}
           lags::Vector{UnitRange{Int}}        # the lags of each window, in samples
        longest::Int                           # the longest lag of all the windows, h
      threshold::Vector{Float64}               # the largest distance of a recurrence, per window
-         apart::Int                           # the rule of the closest, W, in samples
+       apart_t::Int                           # the rule of the closest along the start, W_t, in samples
+       apart_T::Int                           # the same along the lag, W_T ≤ h, in samples
           rows::Vector{Vector{Vector{Float64}}} # per window, the rows of the last three starts
     candidates::Vector{@NamedTuple{d::Float64, start::Int, lag::Int, window::Int}} # those held
          final::Vector{C}                     # the recurrences decided by the last sample
@@ -157,23 +178,29 @@ struct Recurrences{X, V, D, I, C}
                          spacing::Real,
                          windows,
                          threshold,
-                         apart::Real,
+                         apart_t::Real,
+                         apart_T::Real=Inf,
                          invariant=nothing)
         # ---- input checks ----
         length(threshold) in (1, length(windows)) ||
             throw(ArgumentError("threshold must be one distance or one per window"))
 
-        # ---- the windows in samples, their thresholds, and the rule of the closest ----
+        # ---- the windows in samples, their thresholds, and the two widths of the rule of the
+        #      closest ----
         lags   = [round(Int, lo/spacing):round(Int, hi/spacing) for (lo, hi) in windows]
         h      = maximum(last, lags)
         limits = length(threshold) == 1 ? fill(Float64(first(threshold)), length(lags)) :
                                           Float64.(collect(threshold))
-        W      = round(Int, apart/spacing)
+        Wt     = round(Int, apart_t/spacing)
+
+        # ---- the width along the lag at most h, which spans every window, so that Inf, the
+        #      default, is the whole window ----
+        WT = round(Int, min(apart_T/spacing, h))
 
         # ---- the length of the buffer ----
-        # The sample k decides the candidates of the start k - h - 2 - W, whose stretches reach back
-        # to that sample, so the buffer holds h + W + 3 samples (see the top of this file).
-        n = h + W + 3
+        # The sample k decides the candidates of the start k - h - 2 - W_t, whose stretches reach
+        # back to that sample, so the buffer holds h + W_t + 3 samples (see the top of this file).
+        n = h + Wt + 3
 
         # ---- the samples, and their invariants if given ----
         buffer     = RingBuffer(x, n)
@@ -194,11 +221,11 @@ struct Recurrences{X, V, D, I, C}
                         start::Int,
                         lag::Int}
 
-        # ---- the candidates, and the recurrences decided by one sample, cld(h - ℓ_lo + 1, W + 1) at
-        #      most (see the top of this file) ----
+        # ---- the candidates, and the recurrences decided by one sample, cld(n_w, W_T + 1) at most
+        #      in a window of n_w lags (see the top of this file) ----
         candidates = @NamedTuple{d::Float64, start::Int, lag::Int, window::Int}[]
         final      = C[]
-        sizehint!(final, cld(h - minimum(first, lags) + 1, W + 1))
+        sizehint!(final, sum(l -> cld(length(l), WT + 1), lags))
 
         # ---- the histograms of log10 d, bins of 0.01 from -2 to the bin of the threshold, which
         #      bins = ceil(100 (log10 threshold + 2)) of them reach (see the top of this file) ----
@@ -219,7 +246,8 @@ struct Recurrences{X, V, D, I, C}
                       lags,
                       h,
                       limits,
-                      W,
+                      Wt,
+                      WT,
                       rows,
                       candidates,
                       final,
@@ -237,10 +265,10 @@ vector that is empty most of the time. `x` is copied into the buffer. The sample
 of one start in every window, the distances from it to the samples at the lags of the window, the
 same start for all the windows, set by the longest lag. The middle of the last three rows of each
 window is then tested for local minima below the threshold, which join the candidates. The sample
-also decides the candidates that start `apart` and one more sample before the middle row, since
-no later candidate can be close to them, and returns those kept by the rule of the closest. The stretch
-of a recurrence returned is held until the next `push!`, for `seeds`. So is the vector returned, the
-same at every call, which the next `push!` empties. Copy the recurrences to keep them, as
+also decides the candidates that start `apart_t` and one more sample before the middle row, since
+no later candidate can be close to them, and returns those kept by the rule of the closest, in the
+order of (start, lag, window). The stretch of a recurrence returned is held until the next `push!`,
+for `seeds`. So is the vector returned, the same at every call, which the next `push!` empties. Copy the recurrences to keep them, as
 `append!(list, push!(R, x))` does. After the start `push!` allocates nothing, save the array that
 `invariant` returns and the growth of the candidates to a new largest number.
 
@@ -279,16 +307,16 @@ function Base.push!(R::Recurrences, x)
     i >= 3 ||
         return final
 
-    # ---- the candidates of the start s = i - 2 - W are decided, all those within W of them having
-    #      come ----
-    s = i - 2 - R.apart
+    # ---- the candidates of the start s = i - 2 - W_t are decided, all those within W_t of them in
+    #      start having come ----
+    s = i - 2 - R.apart_t
     decide!(final, R, s:s)
 
-    # ---- those that start at s - W or before leave, no later decision needing them, moved out in
+    # ---- those that start at s - W_t or before leave, no later decision needing them, moved out in
     #      place, since filter! would give up the capacity of the vector ----
     kept = 0
     for c in R.candidates
-        c.start > s - R.apart ||
+        c.start > s - R.apart_t ||
             continue
         kept              += 1
         R.candidates[kept] = c
@@ -306,8 +334,9 @@ end
 """
     finish!(R::Recurrences)
 
-The recurrences still undecided when the stream stops, a vector in the order of their starts. No
-sample follows, so every candidate held is decided by the rule of the closest among those held.
+The recurrences still undecided when the stream stops, a vector in the order of (start, lag,
+window). No sample follows, so every candidate held is decided by the rule of the closest among
+those held.
 Their stretches are held until the next `push!`, for `seeds`. The candidates are then emptied, so
 that a second call returns none.
 
@@ -316,7 +345,7 @@ that a second call returns none.
 """
 function finish!(R::Recurrences)
     # ---- the starts decided so far, up to that of the last sample ----
-    decided = lastindex(R.buffer) - R.longest - 2 - R.apart
+    decided = lastindex(R.buffer) - R.longest - 2 - R.apart_t
 
     # ---- the others, all of them ----
     rest = empty(R.final)
@@ -431,20 +460,21 @@ function minima!(R::Recurrences, w::Int, i::Int)
     return R.candidates
 end
 
-# The candidates whose start lies in starts, decided by the rule of the closest, into out: a
-# candidate is kept unless a candidate within W in start and in lag comes before it in the order of
-# (distance, start, lag, window). The candidates held are those that the decision needs. The shifts
-# of a recurrence kept come from one more call of the distance on its pair, since the rows hold
-# distances only.
+# The candidates whose start lies in starts, decided by the rule of the closest, into out in the
+# order of (start, lag, window): a candidate is kept unless a candidate of its window within W_t in
+# start and W_T in lag comes before it in the order of (distance, start, lag). The candidates held
+# are those that the decision needs. The shifts of a recurrence kept come from one more call of the
+# distance on its pair, since the rows hold distances only.
 function decide!(out::Vector, R::Recurrences, starts::UnitRange{Int})
     for c in R.candidates
         c.start in starts ||
             continue
 
-        # ---- a close candidate before it in the order drops it ----
-        before(b) = abs(b.start - c.start) <= R.apart &&
-                    abs(b.lag - c.lag) <= R.apart &&
-                    (b.d, b.start, b.lag, b.window) < (c.d, c.start, c.lag, c.window)
+        # ---- a close candidate of its window before it in the order drops it ----
+        before(b) = b.window == c.window &&
+                    abs(b.start - c.start) <= R.apart_t &&
+                    abs(b.lag - c.lag) <= R.apart_T &&
+                    (b.d, b.start, b.lag) < (c.d, c.start, c.lag)
         any(before, R.candidates) &&
             continue
 
@@ -458,6 +488,10 @@ function decide!(out::Vector, R::Recurrences, starts::UnitRange{Int})
                     start  = c.start,
                     lag    = c.lag))
     end
+
+    # ---- in the order of (start, lag, window), since the candidates of a row come window after
+    #      window ----
+    sort!(out; by = r -> (r.start, r.lag, r.window))
 
     return out
 end

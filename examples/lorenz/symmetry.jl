@@ -2,7 +2,7 @@
 # the z axis. The distance is the smaller of ‖b - a‖ and ‖R b - a‖ over ‖a‖ and returns the rotations
 # r of b that reach it, so that a recurrence may close after the rotation, as the two halves of a
 # symmetric orbit do. This is the small model of the shift and the translation of Kolmogorov flow.
-# Periods from 0.5 to 4 below 0.1, apart 5, along 10⁴ time units. (a) The distance against the
+# Periods from 0.5 to 4 below 0.1, apart_t 5, along 10⁴ time units. (a) The distance against the
 # period of the recurrences, by their rotation. (b) The closest recurrence that closes after the
 # rotation, its end rotated back near its start.
 #
@@ -17,7 +17,7 @@ function stream(x)
                                     spacing   = 0.05,
                                     windows   = [(0.5, 4.0)],
                                     threshold = 0.1,
-                                    apart     = 5.0)
+                                    apart_t   = 5.0)
     found   = []
     shown   = nothing
     first60 = Vector{Float64}[]

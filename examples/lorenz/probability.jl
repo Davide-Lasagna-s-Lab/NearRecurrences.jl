@@ -2,7 +2,7 @@
 # give the fraction C(d) of the pairs closer than d, at the lags of the window, exactly at the edges
 # of their bins. (a) C against d. (b) The distance against the period of the recurrences, with the
 # distances d_p where C reaches the probabilities p, as the note draws them for Kolmogorov flow.
-# Periods from 0.5 to 4 below 0.1, apart 5, along 10⁵ time units.
+# Periods from 0.5 to 4 below 0.1, apart_t 5, along 10⁵ time units.
 #
 #     julia --project=examples examples/lorenz/probability.jl
 include(joinpath(@__DIR__, "lorenz.jl"))
@@ -14,7 +14,7 @@ function stream(x)
                                     spacing   = 0.05,
                                     windows   = [(0.5, 4.0)],
                                     threshold = 0.1,
-                                    apart     = 5.0,
+                                    apart_t   = 5.0,
                                     invariant = invariant)
     found = []
     for _ in 1:2_000_000

@@ -1,6 +1,7 @@
 # The tests: the ring buffer, then the stream against a reference built from the whole trajectory, on
 # the Lorenz system and on the Kuramoto–Sivashinsky equation with its two symmetries, the buffer, the
-# seeds, finish!, the invariant bound, the probability, and a long stream for the runs of days.
+# seeds, finish!, the two widths of the rule of the closest, the invariant bound, the probability,
+# and a long stream for the runs of days.
 #
 #     julia --project=. -e 'using Pkg; Pkg.test()'
 #
@@ -23,14 +24,15 @@ const LONG = get(ENV, "NEARRECURRENCES_LONG", "0") == "1"
 # The recurrences of a whole trajectory, with the rules written plainly. Every window has the rows of
 # the starts whose lags all lie in the trajectory in the longest window, 1 to n. A candidate is an
 # entry below the threshold of its window and below its eight neighbours, the first and the last
-# start and lag excluded. A candidate is a recurrence unless a candidate of any window within W
-# samples in start and in lag comes before it in the order of (distance, start, lag, window). The
-# matrices are built by blocks of starts, each with one more start on either side for the
+# start and lag excluded. A candidate is a recurrence unless a candidate of its window within W_t
+# samples in start and W_T in lag comes before it in the order of (distance, start, lag), with W_T
+# infinite by default, as apart_T. The matrices are built by blocks of starts, each with one more start on either side for the
 # neighbours, so that a long trajectory never needs its whole matrix. The histogram bins the entries
 # below the threshold by the edges at or below their log10, the first bin taking those below -1.99.
 # Returns the recurrences, the candidates, the histograms and the pairs of the windows.
-function reference(samples, distance; spacing, windows, threshold, apart, block=10_000)
-    W      = round(Int, apart/spacing)
+function reference(samples, distance; spacing, windows, threshold, apart_t, apart_T=Inf, block=10_000)
+    Wt     = round(Int, apart_t/spacing)
+    WT     = round(apart_T/spacing)
     limits = length(threshold) == 1 ? fill(first(threshold), length(windows)) : threshold
     lags   = [round(Int, lo/spacing):round(Int, hi/spacing) for (lo, hi) in windows]
     n      = length(samples) - maximum(last, lags)
@@ -72,12 +74,12 @@ function reference(samples, distance; spacing, windows, threshold, apart, block=
 
     # ---- the rule of the closest, over the candidates sorted by start ----
     sort!(candidates; by=c -> c.start)
-    starts = [c.start for c in candidates]
-    order(c) = (c.d, c.start, c.lag, c.window)
+    begins = [c.start for c in candidates]
+    order(c) = (c.d, c.start, c.lag)
     found  = []
     for c in candidates
-        near = candidates[searchsortedfirst(starts, c.start - W):searchsortedlast(starts, c.start + W)]
-        any(b -> abs(b.lag - c.lag) <= W && order(b) < order(c), near) &&
+        near = candidates[searchsortedfirst(begins, c.start - Wt):searchsortedlast(begins, c.start + Wt)]
+        any(b -> b.window == c.window && abs(b.lag - c.lag) <= WT && order(b) < order(c), near) &&
             continue
 
         v = distance(samples[c.start], samples[c.start + c.lag])
@@ -208,8 +210,24 @@ function row_allocations(R, w, i)
     return @allocated NearRecurrences.row!(row, R, w, i)
 end
 
-# ---- two candidates within W samples in start and in lag ----
-near(a, b, W) = abs(a.start - b.start) <= W && abs(a.lag - b.lag) <= W
+# ---- the pairs of a list of recurrences whose starts differ by w samples at most, each pair once ----
+function pairs_within(list, w)
+    sorted = sort(list; by=r -> r.start)
+    pairs  = []
+    for (j, p) in enumerate(sorted)
+        for q in sorted[(j + 1):end]
+            q.start - p.start <= w ||
+                break
+            push!(pairs, (p, q))
+        end
+    end
+    return pairs
+end
+
+# ---- two candidates of one window within W_t samples in start and W_T in lag, the widths of R ----
+near(a, b, R) = a.window == b.window &&
+                abs(a.start - b.start) <= R.apart_t &&
+                abs(a.lag - b.lag) <= R.apart_T
 
 
 # ---------------------------------------------------------------------------- #
@@ -243,32 +261,58 @@ end
 
 @testset "input checks and the windows in samples    " begin
     # ---- the lags of a window are its periods over the spacing, rounded, both ends included, and
-    #      apart in samples the same way: 0.3/0.1 and 0.7/0.1 fall just below 3 and 7 ----
+    #      the two widths in samples the same way: 0.3/0.1 and 0.7/0.1 fall just below 3 and 7 ----
     R = NearRecurrences.Recurrences([1.0, 1.0, 1.0], lorenz_distance;
                                     spacing   = 0.1,
                                     windows   = [(0.3, 0.7), (1.1, 1.7)],
                                     threshold = 0.1,
-                                    apart     = 0.3)
+                                    apart_t   = 0.3,
+                                    apart_T   = 0.7)
     @test 0.3/0.1 < 3
     @test 0.7/0.1 < 7
     @test R.lags == [3:7, 11:17]
-    @test R.apart == 3
+    @test R.apart_t == 3
+    @test R.apart_T == 7
     @test R.longest == 17
+
+    # ---- the buffer follows the width along the start alone, N = h + W_t + 3 ----
     @test length(R.buffer.slots) == 17 + 3 + 3
+
+    # ---- the width along the lag is at most h, which spans every window: Inf by default ----
+    wide(apart_T) = NearRecurrences.Recurrences([1.0, 1.0, 1.0], lorenz_distance;
+                                                spacing   = 0.1,
+                                                windows   = [(0.3, 0.7), (1.1, 1.7)],
+                                                threshold = 0.1,
+                                                apart_t   = 0.3,
+                                                apart_T   = apart_T).apart_T
+    @test wide(Inf) == wide(100.0) == wide(1.7) == 17
+    @test NearRecurrences.Recurrences([1.0, 1.0, 1.0], lorenz_distance;
+                                      spacing   = 0.1,
+                                      windows   = [(0.3, 0.7), (1.1, 1.7)],
+                                      threshold = 0.1,
+                                      apart_t   = 0.3).apart_T == 17
 
     @test_throws ArgumentError NearRecurrences.Recurrences([1.0, 1.0, 1.0], lorenz_distance;
                                                            spacing   = 0.05,
                                                            windows   = [(1.3, 1.8), (2.0, 2.6)],
                                                            threshold = [0.1, 0.1, 0.1],
-                                                           apart     = 1.0)
+                                                           apart_t   = 1.0,
+                                                           apart_T   = 0.1)
+
+    # ---- the width along the start is required ----
+    @test_throws UndefKeywordError NearRecurrences.Recurrences([1.0, 1.0, 1.0], lorenz_distance;
+                                                               spacing   = 0.1,
+                                                               windows   = [(0.3, 0.7)],
+                                                               threshold = 0.1)
 end
 
 @testset "Lorenz, two windows                      " begin
-    # ---- apart of 20 samples, wider than the first window of 11 lags, a threshold per window ----
+    # ---- 20 samples along the start, wider than the first window of 11 lags, the whole window
+    #      along the lag, a threshold per window ----
     settings = (spacing   = 0.05,
                 windows   = [(1.3, 1.8), (2.0, 2.6)],
                 threshold = [0.1, 0.15],
-                apart     = 1.0)
+                apart_t   = 1.0)
     x = transient(lorenz_advance!, [1.0, 1.0, 1.0], 400)
     R = NearRecurrences.Recurrences(x, lorenz_distance; settings...)
 
@@ -280,6 +324,7 @@ end
         lorenz_advance!(x)
         push!(samples, copy(x))
         final = push!(R, x)
+        @test issorted(final; by=r -> (r.start, r.lag, r.window))
 
         # ---- the buffer: the stretch that started at its first sample has left ----
         if oldest !== nothing
@@ -310,26 +355,159 @@ end
     @test isempty(NearRecurrences.finish!(R))
 
     # ---- the same recurrences as the reference, in both windows, with the rule of the closest at
-    #      work within a window and across the two ----
+    #      work within each ----
     expected, candidates, counts, pairs = reference(samples, lorenz_distance; settings...)
-    W = R.apart
     @test length(found) == length(expected)
     @test ordered(found) == ordered(expected)
     @test all(w -> count(r -> r.window == w, found) >= 10, 1:2)
     @test length(candidates) > length(expected)
-    @test any(c -> c.window == 2 && any(b -> b.window == 1 && near(b, c, W), candidates), candidates)
+
+    # ---- the windows never compete: a recurrence of the second window is kept beside a closer one
+    #      of the first, a few starts away ----
+    @test any(found) do r
+        r.window == 2 && any(q -> q.window == 1 && abs(q.start - r.start) <= R.apart_t && q.d < r.d, found)
+    end
     @test all(r -> r.shifts == (), found)
 
     # ---- the histograms and the probability ----
     check_probability(R, counts, pairs)
 end
 
+@testset "the two widths                           " begin
+    # ---- one stream of Lorenz through two windows that overlap on the lags 29 to 34, the second of
+    #      52 lags, searched with six pairs of widths in samples: 40 along the start and 1 along the
+    #      lag, the start wider than the first window of 25 lags; the other way round, 1 and 40; 20
+    #      and none along the lag; none at all; 20 and the default, the whole window; 20 and 51, as
+    #      wide as the second window ----
+    widths = [(apart_t = 2.0,  apart_T = 0.05),
+              (apart_t = 0.05, apart_T = 2.0),
+              (apart_t = 1.0,  apart_T = 0.0),
+              (apart_t = 0.0,  apart_T = 0.0),
+              (apart_t = 1.0,),
+              (apart_t = 1.0,  apart_T = 2.55)]
+    base   = (spacing   = 0.05,
+              windows   = [(0.5, 1.7), (1.45, 4.0)],
+              threshold = 0.1)
+    x        = transient(lorenz_advance!, [1.0, 1.0, 1.0], 400)
+    searches = [NearRecurrences.Recurrences(copy(x), lorenz_distance; base..., w...) for w in widths]
+    @test [R.apart_T for R in searches] == [1, 40, 0, 0, 80, 51]
+
+    # ---- the stream. For every recurrence that push! returns, whether it starts at the first sample
+    #      held, N = h + W_t + 3, and whether its seeds at every sample are its stretch bit for bit.
+    #      The seeds of those of finish! are checked in full ----
+    samples = Vector{Float64}[]
+    found   = [[] for _ in widths]
+    oldest  = [Bool[] for _ in widths]
+    copies  = [Bool[] for _ in widths]
+    for k in 1:20_000
+        lorenz_advance!(x)
+        push!(samples, copy(x))
+        for (j, R) in enumerate(searches)
+            for r in push!(R, x)
+                g = NearRecurrences.seeds(R, r, r.lag)
+                push!(found[j], r)
+                push!(oldest[j], r.start == firstindex(R.buffer))
+                push!(copies[j], g.states == samples[r.start .+ (0:r.lag)])
+            end
+        end
+    end
+    for (j, R) in enumerate(searches)
+        rest = NearRecurrences.finish!(R)
+        for r in rest
+            check_seeds(R, r, r.lag, samples, lorenz_advance!, lorenz_distance)
+        end
+        append!(found[j], rest)
+    end
+    @test all(all, oldest)
+    @test all(all, copies)
+
+    # ---- each search is the reference, and its recurrences are never close to one another ----
+    for (j, w) in enumerate(widths)
+        expected = reference(samples, lorenz_distance; base..., w...)[1]
+        @test ordered(found[j]) == ordered(expected)
+        @test length(found[j]) >= 50
+        @test !any(((p, q),) -> near(p, q, searches[j]), pairs_within(found[j], searches[j].apart_t))
+    end
+
+    # ---- long along the start and narrow along the lag: two recurrences of one window from nearby
+    #      starts with different periods are both kept, and the other way round two of about the
+    #      same period from starts a little apart ----
+    @test any(((p, q),) -> p.window == q.window && abs(p.lag - q.lag) > 1, pairs_within(found[1], 40))
+    @test any(((p, q),) -> p.window == q.window && abs(p.lag - q.lag) <= 40 && q.start - p.start > 1,
+              pairs_within(found[2], 40))
+
+    # ---- no width along the lag: two recurrences of one start and one window with different lags
+    #      are both kept, and two of one lag and one window within 20 starts are not ----
+    @test any(((p, q),) -> p.window == q.window && p.start == q.start, pairs_within(found[3], 0))
+    @test !any(((p, q),) -> p.window == q.window && p.lag == q.lag, pairs_within(found[3], 20))
+
+    # ---- no width at all: every candidate is kept, a pair that is a candidate of both windows in
+    #      both ----
+    candidates = reference(samples, lorenz_distance; base..., apart_t = 0.0, apart_T = 0.0)[2]
+    inwindow1  = Set((c.start, c.lag) for c in candidates if c.window == 1)
+    shared     = [c for c in candidates if c.window == 2 && (c.start, c.lag) in inwindow1]
+    kept       = Set((r.start, r.lag, r.window) for r in found[4])
+    @test !isempty(shared)
+    @test length(found[4]) == length(candidates)
+    @test all(c -> (c.start, c.lag, 1) in kept && (c.start, c.lag, 2) in kept, shared)
+
+    # ---- the default, the whole window along the lag, is any width as wide as the window, and the
+    #      two overlapping windows both return a pair that lies in both ----
+    @test found[5] == found[6]
+    @test any(r -> r.window == 1 && any(q -> q.window == 2 && (q.start, q.lag) == (r.start, r.lag),
+                                        found[5]), found[5])
+end
+
+@testset "windows apart in lag, a designed stream  " begin
+    # The samples are the numbers 1, 2, 3, …, and the distance of the start i and the lag ℓ is 1 but
+    # at five pairs, each a minimum below the threshold 0.8. The first window holds the lags 20 to 30,
+    # the second 5 to 9, with 30 samples along the start and the whole window along the lag. At the
+    # start 50 the first window has a minimum of 0.1 and the second one of 0.5: both are returned,
+    # since windows never compete, in one call and in the order of their lags. Within each window
+    # the rule acts: (60, 24) of 0.3 falls to (50, 25), and (60, 6) of 0.6 to (50, 7), but (100, 8) of
+    # 0.7 lies 50 starts from (50, 7) and is kept.
+    special  = Dict((50, 25) => 0.1, (50, 7) => 0.5, (60, 24) => 0.3, (60, 6) => 0.6, (100, 8) => 0.7)
+    designed = (a, b) -> get(special, (round(Int, a[1]), round(Int, b[1] - a[1])), 1.0)
+    count!   = x -> (x[1] += 1; x)
+
+    R = NearRecurrences.Recurrences([0.0], designed;
+                                    spacing   = 1.0,
+                                    windows   = [(20.0, 30.0), (5.0, 9.0)],
+                                    threshold = 0.8,
+                                    apart_t   = 30.0)
+    @test R.apart_T == 30
+
+    # ---- the stream, the calls that return recurrences, and their seeds ----
+    x       = [0.0]
+    samples = Vector{Float64}[]
+    calls   = []
+    for k in 1:300
+        count!(x)
+        push!(samples, copy(x))
+        final = push!(R, x)
+        isempty(final) ||
+            push!(calls, copy(final))
+        for r in final, m in (1, 2, r.lag)
+            check_seeds(R, r, m, samples, count!, designed)
+        end
+    end
+    @test isempty(NearRecurrences.finish!(R))
+
+    # ---- two calls, the first with both minima of the start 50, the second window first ----
+    @test [[(r.start, r.lag, r.window, r.d) for r in c] for c in calls] ==
+          [[(50, 7, 2, 0.5), (50, 25, 1, 0.1)], [(100, 8, 2, 0.7)]]
+    @test ordered(reduce(vcat, calls)) ==
+          ordered(reference(samples, designed; spacing = 1.0, windows = [(20.0, 30.0), (5.0, 9.0)],
+                            threshold = 0.8, apart_t = 30.0)[1])
+end
+
 @testset "Kuramoto–Sivashinsky, a shift and a reflection" begin
-    # ---- apart of 40 samples, wider than both windows, a threshold per window ----
+    # ---- 40 samples along the start, wider than both windows, the whole window along the lag, a
+    #      threshold per window ----
     settings = (spacing   = 0.25,
                 windows   = [(9.0, 12.0), (30.0, 35.0)],
                 threshold = [0.2, 0.15],
-                apart     = 10.0)
+                apart_t   = 10.0)
     u = zeros(30)
     u[1] = 0.3
     u[4] = -0.2
@@ -417,11 +595,13 @@ end
 @testset "a long stream                            " begin
     # ---- five windows of 11 to 201 lags, a threshold each, the first two touching at T = 1.8, the
     #      lag 36, the second and the third overlapping on the lags 44 to 52, the rotation of the
-    #      Lorenz system, and apart of 100 samples, wider than all the windows but the last ----
+    #      Lorenz system, and 100 samples along the start, wider than all the windows but the last,
+    #      and 20 along the lag, narrower than the last two ----
     settings = (spacing   = 0.05,
                 windows   = [(1.3, 1.8), (1.8, 2.6), (2.2, 3.0), (10.0, 12.0), (40.0, 50.0)],
                 threshold = [0.1, 0.12, 0.12, 0.15, 0.2],
-                apart     = 5.0)
+                apart_t   = 5.0,
+                apart_T   = 1.0)
     x = transient(lorenz_advance!, [1.0, 1.0, 1.0], 400)
     R = NearRecurrences.Recurrences(copy(x), rotated_distance; settings...)
     n = LONG ? 5*10^5 : 2*10^4
@@ -437,11 +617,10 @@ end
     grew = [held[k] > most[k - 1] for k in 11:n]
     @test all((bytes[11:n] .== 0) .| grew)
     @test sum(bytes[11:n] .> 0) <= 12
-    @test length(R.final) <= cld(R.longest - minimum(first, R.lags) + 1, R.apart + 1)
+    @test length(R.final) <= sum(l -> cld(length(l), R.apart_T + 1), R.lags)
 
     # ---- the same recurrences, histograms and pairs as the reference by blocks ----
     expected, candidates, counts, pairs = reference(samples, rotated_distance; settings...)
-    W     = R.apart
     every = [found; rest]
     @test ordered(every) == ordered(expected)
     @test R.counts == counts
@@ -453,7 +632,7 @@ end
     @test Set(r.shifts[1] for r in every) == Set([0, 1])
     rotations(c) = rotated_distance(samples[c.start], samples[c.start + c.lag])[2]
     @test any(candidates) do c
-        any(b -> near(b, c, W) && b.d < c.d && rotations(b) != rotations(c), candidates)
+        any(b -> near(b, c, R) && b.d < c.d && rotations(b) != rotations(c), candidates)
     end
 
     # ---- the touching windows: the common lag is the edge of both, a candidate of neither, while
@@ -465,10 +644,16 @@ end
                       threshold = 0.12)[2]
     @test any(c -> c.lag == common, merged)
 
-    # ---- the overlapping windows: a pair that is a candidate of both is one recurrence ----
+    # ---- the overlapping windows: a pair may be a candidate of both, and each window decides its
+    #      candidates alone, as a search on that window by itself does, up to the starts that the end
+    #      of the longer stream of the window alone could change ----
     @test any(c -> c.window == 3 && any(b -> b.window == 2 && b.start == c.start && b.lag == c.lag,
                                         candidates), candidates)
-    @test length(unique((r.start, r.lag) for r in every)) == length(every)
+    alone = reference(samples, rotated_distance; settings..., windows = [(2.2, 3.0)],
+                     threshold = 0.12)[1]
+    cut   = length(samples) - R.longest - R.apart_t - 2
+    @test [(r.start, r.lag, r.d) for r in ordered(every) if r.window == 3 && r.start < cut] ==
+          [(r.start, r.lag, r.d) for r in ordered(alone) if r.start < cut]
 
     # ---- the replay of the samples stored gives the same stream: the recurrences in the same
     #      order, their seeds bit for bit, and the state of the search ----
@@ -495,7 +680,7 @@ end
                                         spacing   = spacing,
                                         windows   = [(1.3, 1.8)],
                                         threshold = 0.15,
-                                        apart     = 1.0)
+                                        apart_t   = 1.0)
         calls = Bool[]
         span  = Float64[]
         closing = Float64[]

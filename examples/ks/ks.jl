@@ -5,7 +5,7 @@
 # exactly, steps of 0.025, a sample every 0.25. The distance is minimised over the shift and the
 # reflection and returns (d, σ, r), and the invariant is the weighted moduli √2 |a_k|.
 #
-# A stream of 5 × 10⁴ time units, for the periods from 8 to 40 below 0.15, with apart 90, about four
+# A stream of 5 × 10⁴ time units, for the periods from 8 to 40 below 0.15, with apart_t 90, about four
 # Lyapunov times at the leading exponent near 0.04. (search.png) The distance against the period of
 # the recurrences, with the distances where the probability C(d) reaches three levels, and the
 # space–time picture of the stretch of the closest recurrence, with the seeds of four segments.
@@ -38,7 +38,7 @@ function stream()
                                         spacing   = 0.25,
                                         windows   = [(8.0, 40.0)],
                                         threshold = 0.15,
-                                        apart     = 90.0,
+                                        apart_t   = 90.0,
                                         invariant = ks_invariant)
 
     found   = []
